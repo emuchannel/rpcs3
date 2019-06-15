@@ -1984,43 +1984,42 @@ u16 thread_ctrl::get_affinity_mask(thread_class group)
 
 	if (const auto thread_count = std::thread::hardware_concurrency())
 	{
-		const u16 all_cores_mask = thread_count < 16 ? (u16)(~(UINT16_MAX << thread_count)): UINT16_MAX;
-
+		const u16 any_core = 0;
 		switch (g_native_core_layout)
 		{
 		default:
 		case native_core_arrangement::generic:
 		{
-			return all_cores_mask;
+			return any_core;
 		}
 		case native_core_arrangement::amd_ccx:
 		{
-			u16 spu_mask, ppu_mask, rsx_mask;
+			u16 spu_mask, ppu_mask, rsx_mask, ccx_mask;
 			if (thread_count >= 16)
 			{
 				// Threadripper, R7
 				// Assign threads 8-16
 				// It appears some windows code is bound to lower core addresses, binding 8-16 is alot faster than 0-7
 				ppu_mask = spu_mask = 0b1111111100000000;
-				rsx_mask = all_cores_mask;
+				rsx_mask = ccx_mask = (thread_count > 16)? UINT16_MAX : any_core;
 			}
 			else if (thread_count == 12)
 			{
 				// 1600/2600 (x)
-				ppu_mask = spu_mask = 0b111111000000;
-				rsx_mask = all_cores_mask;
+				spu_mask = 0b111111000000;
+				ppu_mask = rsx_mask = ccx_mask = any_core;
 			}
 			else
 			{
 				// R5 & R3 don't seem to improve performance no matter how these are shuffled
-				ppu_mask = spu_mask = rsx_mask = 0b11111111 & all_cores_mask;
+				return any_core;
 			}
 
 			switch (group)
 			{
 			default:
 			case thread_class::general:
-				return all_cores_mask;
+				return ccx_mask;
 			case thread_class::rsx:
 				return rsx_mask;
 			case thread_class::ppu:
@@ -2048,7 +2047,7 @@ u16 thread_ctrl::get_affinity_mask(thread_class group)
 			}
 			*/
 
-			return all_cores_mask;
+			return any_core;
 		}
 		}
 	}
@@ -2091,6 +2090,8 @@ void thread_ctrl::set_native_priority(int priority)
 
 void thread_ctrl::set_thread_affinity_mask(u16 mask)
 {
+	if (!mask) return;
+
 #ifdef _WIN32
 	HANDLE _this_thread = GetCurrentThread();
 	SetThreadAffinityMask(_this_thread, (DWORD_PTR)mask);
